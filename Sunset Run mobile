@@ -1,0 +1,303 @@
+#Region  Project Attributes
+    #ApplicationLabel: Sunset Run
+    #VersionCode: 1
+    #VersionName:
+    'SupportedOrientations possible values: unspecified, landscape or portrait.
+    #SupportedOrientations: Landscape
+    #CanInstallToExternalStorage: False
+#End Region
+
+
+#Region  Activity Attributes
+    #FullScreen: True
+    #IncludeTitle: False
+#End Region
+
+
+Sub Process_Globals
+
+    Type Physical_Object(X As Float, Y As Float, Old_X As Float, Old_Y As Float, _
+                         Width As Float, Height As Float, Angle As Float, Velocity As Float, _
+                         Velocity_X As Float, Velocity_Y As Float, Jump_Velocity As Float, _
+                         Grounded As Boolean, Mass As Float, Elasticity As Float, Collision As Boolean)
+
+    Dim Main_Cycle As Timer
+
+End Sub
+
+
+Sub Globals
+
+    'Game Engine
+        Dim Target_FPS = 60 As Int
+        Dim Delta_Time = 1 / Target_FPS As Float
+        Dim Frame_Timestamp As Long
+
+    'World
+        Dim World_Gravity As Float
+
+    'Output Text
+        Dim     Score      As Int
+        Dim     Score_Done As Boolean
+        Private Output     As Label
+
+    'Objects
+        Private pnlGround   As Panel
+        Private pnlObstacle As Panel
+        Private pnlPlayer   As Panel
+        Private pnlTouch As Panel
+
+    'Object Physical Properties
+        Dim Ground    As Physical_Object
+        Dim Obstacle  As Physical_Object
+        Dim Player    As Physical_Object
+
+End Sub
+
+
+Sub Activity_Create(FirstTime As Boolean)
+
+    'Load Layout
+        Activity.LoadLayout("Layout1")
+
+    'Setup Output Text
+        Output.Left         =   0%x
+        Output.Top          =   0%y
+        Output.Width        = 100%x
+        Output.Height       = 100%y
+
+    'Setup User Input
+        pnlTouch.Left        =   0%x
+        pnlTouch.Top         =   0%y
+        pnlTouch.Width       = 100%x
+        pnlTouch.Height      = 100%y
+
+    'Setup Initial Game Conditions
+        Setup_Initial_Conditions
+
+    'Apply everything above to our panels
+        Obj2Pnl
+
+    'Make sure the Touch Panel is the front most one
+        pnlTouch.BringToFront
+
+    'Startup the Main Cycle
+        Main_Cycle.Initialize("Main_Cycle", Delta_Time * 1000)
+        Main_Cycle.Enabled = True
+
+End Sub
+
+Sub Setup_Initial_Conditions
+
+    'Setup Object dimensions and location on screen
+        Ground.Width         = 100%x
+        Ground.Height        = 60%y
+        Ground.X             = 0%x
+        Ground.Y             = 80%y
+
+        Obstacle.Width       = 1%x * Rnd(6, 26)
+        Obstacle.Height      = Round(Obstacle.Width * (Rnd(100, 151) / 100))
+        Obstacle.X           = 100%x
+        Obstacle.Y           = Ground.Y - Obstacle.Height
+        Obstacle.Velocity_X  = -60%x
+
+        Player.Width         = 4%x
+        Player.Height        = Player.Width
+        Player.X             = 50%x - (Player.Width / 2)
+        Player.Y             = Ground.Y - Player.Height
+        Player.Jump_Velocity = 200%x
+
+    'Setup World Properties
+        World_Gravity = 800%y
+
+End Sub
+
+
+Sub Activity_Resume
+End Sub
+
+
+Sub Activity_Pause (UserClosed As Boolean)
+End Sub
+
+
+Sub Main_Cycle_Tick
+    Backup_Object_Positions
+    Get_Delta_Time
+    Run_Run_Run
+    Apply_Physics
+    Collision_Detector
+    Score_Control
+    Obstacle_Respawn_Control
+    Obj2Pnl
+    Display_Score
+End Sub
+
+
+Sub Backup_Object_Positions
+    Player.Old_X   = Player.X
+    Player.Old_Y   = Player.Y
+    Obstacle.Old_X = Obstacle.X
+    Obstacle.Old_Y = Obstacle.Y
+End Sub
+
+
+Sub Get_Delta_Time
+    If Frame_Timestamp <> 0 Then Delta_Time = (DateTime.Now - Frame_Timestamp) / 1000
+    Frame_Timestamp = DateTime.Now
+End Sub
+
+
+Sub Run_Run_Run
+    Obstacle.X = Obstacle.X + (Obstacle.Velocity_X * Delta_Time)
+    If Not(Game_Over) Then Obstacle.Velocity_X = Max(Obstacle.Velocity_X - (2%x * Delta_Time), -250%x)
+End Sub
+
+
+Sub Apply_Physics
+    Player.Velocity_Y   = Player.Velocity_Y   + (World_Gravity       * Delta_Time)
+    Player.Y            = Player.Y            + (Player.Velocity_Y   * Delta_Time)
+    Obstacle.Velocity_Y = Obstacle.Velocity_Y + (World_Gravity       * Delta_Time)
+    Obstacle.Y          = Obstacle.Y          + (Obstacle.Velocity_Y * Delta_Time)
+End Sub
+
+
+Sub Collision_Detector
+
+    'Detect Ground Collisions
+        If Player.Y + Player.Height >= Ground.Y Then Player.Y = Ground.Y - Player.Height
+        If Obstacle.Y + Obstacle.Height >= Ground.Y Then Obstacle.Y = Ground.Y - Obstacle.Height
+
+    'Detect Player / Obstacle Collisions
+        Dim which_side                             As String
+        Dim top    = Obstacle.Y                    As Float
+        Dim bottom = Obstacle.Y + Obstacle.Height  As Float
+        Dim left   = Obstacle.X                    As Float
+        Dim right  = Obstacle.X + Obstacle.Width   As Float
+
+        If  (Player.X + Player.Width)  >= Obstacle.X AND Player.X < (Obstacle.X + Obstacle.Width ) _
+        AND (Player.Y + Player.Height) >= Obstacle.Y AND Player.Y < (Obstacle.Y + Obstacle.Height) Then
+
+                If Player.Collision = False Then
+                    If Player.Velocity_Y < 0 Then Player.Velocity_Y = 0
+                    Player.Collision = True
+                End If
+
+                If Player.Old_x                 < left   AND Player.X + Player.Width  > left   Then which_side = "LEFT"
+                If Player.Old_x + Player.Width  > right  AND Player.X                 < right  Then which_side = "RIGHT"
+                If Player.Old_y                 < top    AND Player.Y + Player.Height > top    Then which_side = "TOP"
+                If Player.Old_y + Player.Height > bottom AND Player.Y                 < bottom Then which_side = "BOTTOM"
+
+                If which_side = "TOP" Then
+                    Player.Grounded = True
+                    Player.Y = top - Player.Height
+                Else If which_side = "BOTTOM" Then
+                    Player.Grounded = False
+                    Player.Y = bottom
+                Else If which_side = "LEFT" Then
+                    Player.Grounded = False
+                    Player.X = left - Player.Width
+                Else If which_side = "RIGHT" Then
+                    Player.Grounded = False
+                    Player.X = right
+                Else
+                    Player.Grounded = False
+                End If
+        Else
+            Player.Grounded = False
+        End If
+End Sub
+
+
+Sub Player_Jump(Jump_Velocity_Y As Float)
+    Player.Velocity_Y = Jump_Velocity_Y
+End Sub
+
+
+Sub Player_On_The_Ground As Boolean
+    If (Player.Y + Player.Height >= Ground.Y) OR Player.Grounded Then
+        Return True
+    Else
+        Return False
+    End If
+End Sub
+
+
+Sub Display_Score
+    If Not(Game_Over) Then
+        Output.Text = CRLF & "SCORE: " & Score
+    Else
+        Output.Text = CRLF & "GAME OVER" & CRLF & "SCORE: " & Score
+    End If
+End Sub
+
+
+Sub Score_Control
+    If Not(Game_Over) AND Player.X > Obstacle.X AND Score_Done = False Then
+        Score = Score + 1
+        Score_Done = True
+    End If
+End Sub
+
+
+Sub Game_Over As Boolean
+    If Player.X + Player.Width < 0%x Then
+        Return True
+    Else
+        Return False
+    End If
+End Sub
+
+
+Sub Obstacle_Respawn_Control
+    If Obstacle.X + Obstacle.Width < 0%x Then
+        Obstacle.Width  =  1%x * Rnd(6, 26)
+        Obstacle.Height = Round(Obstacle.Width * (Rnd(100, 151) / 100))
+        Obstacle.X = 100%x
+        Obstacle.Y = Ground.Y - Obstacle.Height
+        Score_Done = False
+        Player.Collision = False
+    End If
+End Sub
+
+
+Sub Obj2Pnl
+    pnlGround.Width    = Ground.Width
+    pnlGround.Height   = Ground.Height
+    pnlGround.Left     = Ground.X
+    pnlGround.Top      = Ground.Y
+
+    pnlObstacle.Width  = Obstacle.Width
+    pnlObstacle.Height = Obstacle.Height
+    pnlObstacle.Left   = Obstacle.X
+    pnlObstacle.Top    = Obstacle.Y
+
+    pnlPlayer.Width    = Player.Width
+    pnlPlayer.Height   = Player.Height
+    pnlPlayer.Left     = Player.X
+    pnlPlayer.Top      = Player.Y
+End Sub
+
+
+Sub pnlTouch_Touch (Action As Int, X As Float, Y As Float)
+    If Not(Game_Over) Then
+        Select Action
+            Case Activity.ACTION_DOWN
+                If Player_On_The_Ground Then
+                    Player.Grounded = False
+                    Player_Jump(-Player.Jump_Velocity)
+                End If
+
+            Case Activity.ACTION_MOVE
+
+            Case Activity.ACTION_UP
+                If Player.Velocity_Y < (-Player.Jump_Velocity * 0.33) Then
+                    Player_Jump(-Player.Jump_Velocity * 0.33)
+                End If
+
+        End Select
+    Else
+        Score = 0
+        Setup_Initial_Conditions
+    End If
+End Sub
